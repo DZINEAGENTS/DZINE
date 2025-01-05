@@ -54,10 +54,6 @@ Battle mechanics engine
 Tournament management
 Real-time updates
 
- Development Setup
-# Clone the repository
-git clone https://github.com/yourusername/DZINE.git
-
 # Install dependencies
 cd DZINE
 npm install
