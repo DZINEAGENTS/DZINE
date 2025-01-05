@@ -1,0 +1,254 @@
+// src/server.ts
+import express from 'express';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { WebSocketServer } from 'ws';
+import { PrismaClient } from '@prisma/client';
+import { redis } from './services/redis';
+import { battleSystem } from './systems/battleSystem';
+import { tournamentSystem } from './systems/tournamentSystem';
+
+const app = express();
+const prisma = new PrismaClient();
+const wss = new WebSocketServer({ port: 8080 });
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+
+// WebSocket connections
+wss.on('connection', (ws) => {
+  ws.on('message', async (message) => {
+    const data = JSON.parse(message.toString());
+    switch (data.type) {
+      case 'JOIN_BATTLE':
+        await battleSystem.joinBattle(data.battleId, ws);
+        break;
+      case 'BATTLE_MOVE':
+        await battleSystem.processMove(data.battleId, data.move);
+        break;
+    }
+  });
+});
+
+// Routes
+app.post('/api/agents', async (req, res) => {
+  try {
+    const { ownerAddress, configuration, stats } = req.body;
+    const agent = await prisma.agent.create({
+      data: {
+        ownerAddress,
+        configuration,
+        stats,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    res.json(agent);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create agent' });
+  }
+});
+
+app.get('/api/agents/:id', async (req, res) => {
+  try {
+    const agent = await prisma.agent.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    res.json(agent);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agent' });
+  }
+});
+
+app.post('/api/tournaments', async (req, res) => {
+  try {
+    const { prizePool, startTime, endTime } = req.body;
+    const tournament = await tournamentSystem.createTournament({
+      prizePool,
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+    });
+    res.json(tournament);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create tournament' });
+  }
+});
+
+// src/systems/battleSystem.ts
+import { WebSocket } from 'ws';
+import { PrismaClient } from '@prisma/client';
+import { redis } from '../services/redis';
+
+class BattleSystem {
+  private battles: Map<string, Set<WebSocket>> = new Map();
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async joinBattle(battleId: string, ws: WebSocket) {
+    if (!this.battles.has(battleId)) {
+      this.battles.set(battleId, new Set());
+    }
+    this.battles.get(battleId)?.add(ws);
+
+    // Send battle state
+    const battle = await this.prisma.battle.findUnique({
+      where: { id: battleId },
+    });
+    ws.send(JSON.stringify({ type: 'BATTLE_STATE', battle }));
+  }
+
+  async processMove(battleId: string, move: any) {
+    // Process the move
+    const result = await this.calculateMoveResult(battleId, move);
+    
+    // Update battle state
+    await this.prisma.battle.update({
+      where: { id: battleId },
+      data: { state: result },
+    });
+
+    // Notify all participants
+    this.battles.get(battleId)?.forEach(client => {
+      client.send(JSON.stringify({ type: 'MOVE_RESULT', result }));
+    });
+  }
+
+  private async calculateMoveResult(battleId: string, move: any) {
+    // Implement move calculation logic
+    return {};
+  }
+}
+
+export const battleSystem = new BattleSystem();
+
+// src/systems/tournamentSystem.ts
+import { PrismaClient } from '@prisma/client';
+import { redis } from '../services/redis';
+
+class TournamentSystem {
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async createTournament(data: {
+    prizePool: number;
+    startTime: Date;
+    endTime: Date;
+  }) {
+    return await this.prisma.tournament.create({
+      data: {
+        ...data,
+        status: 'REGISTRATION',
+        createdAt: new Date(),
+      },
+    });
+  }
+
+  async registerParticipant(tournamentId: string, agentId: string) {
+    // Verify tournament status
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+    });
+    
+    if (!tournament || tournament.status !== 'REGISTRATION') {
+      throw new Error('Tournament not available for registration');
+    }
+
+    // Register participant
+    await this.prisma.tournamentParticipant.create({
+      data: {
+        tournamentId,
+        agentId,
+      },
+    });
+  }
+
+  async startTournament(tournamentId: string) {
+    const tournament = await this.prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { status: 'ACTIVE' },
+    });
+
+    // Generate initial matches
+    await this.generateMatches(tournamentId);
+  }
+
+  private async generateMatches(tournamentId: string) {
+    const participants = await this.prisma.tournamentParticipant.findMany({
+      where: { tournamentId },
+    });
+
+    // Implement bracket generation logic
+    // Create initial matches
+  }
+}
+
+export const tournamentSystem = new TournamentSystem();
+
+// src/services/redis.ts
+import { createClient } from 'redis';
+
+export const redis = createClient({
+  url: process.env.REDIS_URL,
+});
+
+redis.on('error', (err) => console.error('Redis Client Error', err));
+
+// Connect to Redis
+redis.connect().catch(console.error);
+
+// src/prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id            String   @id @default(uuid())
+  ownerAddress  String
+  configuration Json
+  stats         Json
+  createdAt     DateTime
+  updatedAt     DateTime
+  battles       Battle[]
+}
+
+model Battle {
+  id        String   @id @default(uuid())
+  agent1Id  String
+  agent2Id  String
+  state     Json
+  status    String
+  createdAt DateTime
+  agent1    Agent    @relation(fields: [agent1Id], references: [id])
+  agent2    Agent    @relation(fields: [agent2Id], references: [id])
+}
+
+model Tournament {
+  id           String   @id @default(uuid())
+  prizePool    Float
+  status       String
+  startTime    DateTime
+  endTime      DateTime
+  createdAt    DateTime
+  participants TournamentParticipant[]
+}
+
+model TournamentParticipant {
+  id           String     @id @default(uuid())
+  tournamentId String
+  agentId      String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+}
