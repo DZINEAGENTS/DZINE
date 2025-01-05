@@ -1,0 +1,385 @@
+// lib.rs
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+
+declare_id!("Dx1ne11111111111111111111111111111111111111");
+
+#[program]
+pub mod dzine_program {
+    use super::*;
+
+    // Initialize the DZINE token with total supply
+    pub fn initialize_token(ctx: Context<InitializeToken>, total_supply: u64) -> Result<()> {
+        // Set total supply of 1 billion tokens
+        let total_supply = 1_000_000_000 * 10_u64.pow(9);
+        
+        // Create mint and initial token account
+        token::mint_to(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::MintTo {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.token_account.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
+                },
+            ),
+            total_supply,
+        )?;
+
+        Ok(())
+    }
+
+    // Create a new tournament
+    pub fn create_tournament(
+        ctx: Context<CreateTournament>,
+        prize_pool: u64,
+        entry_fee: u64,
+        max_participants: u32,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<()> {
+        require!(start_time > Clock::get()?.unix_timestamp, ErrorCode::InvalidStartTime);
+        require!(end_time > start_time, ErrorCode::InvalidEndTime);
+
+        let tournament = &mut ctx.accounts.tournament;
+        tournament.authority = ctx.accounts.authority.key();
+        tournament.prize_pool = prize_pool;
+        tournament.entry_fee = entry_fee;
+        tournament.max_participants = max_participants;
+        tournament.current_participants = 0;
+        tournament.start_time = start_time;
+        tournament.end_time = end_time;
+        tournament.active = true;
+
+        Ok(())
+    }
+
+    // Register for a tournament
+    pub fn register_for_tournament(ctx: Context<RegisterTournament>) -> Result<()> {
+        let tournament = &mut ctx.accounts.tournament;
+        require!(tournament.active, ErrorCode::TournamentNotActive);
+        require!(
+            Clock::get()?.unix_timestamp >= tournament.start_time,
+            ErrorCode::TournamentNotStarted
+        );
+        require!(
+            Clock::get()?.unix_timestamp < tournament.end_time,
+            ErrorCode::TournamentEnded
+        );
+        require!(
+            tournament.current_participants < tournament.max_participants,
+            ErrorCode::TournamentFull
+        );
+
+        // Transfer entry fee
+        if tournament.entry_fee > 0 {
+            token::transfer(
+                CpiContext::new(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.player_token_account.to_account_info(),
+                        to: ctx.accounts.tournament_token_account.to_account_info(),
+                        authority: ctx.accounts.player.to_account_info(),
+                    },
+                ),
+                tournament.entry_fee,
+            )?;
+        }
+
+        tournament.current_participants += 1;
+        Ok(())
+    }
+
+    // Distribute tournament prizes
+    pub fn distribute_prizes(
+        ctx: Context<DistributePrizes>,
+        winners: Vec<Pubkey>,
+        prizes: Vec<u64>,
+    ) -> Result<()> {
+        require!(winners.len() == prizes.len(), ErrorCode::ArrayLengthMismatch);
+        
+        let tournament = &mut ctx.accounts.tournament;
+        require!(tournament.active, ErrorCode::TournamentNotActive);
+        require!(
+            Clock::get()?.unix_timestamp >= tournament.end_time,
+            ErrorCode::TournamentNotEnded
+        );
+
+        // Calculate total prizes
+        let total_prizes: u64 = prizes.iter().sum();
+        require!(total_prizes <= tournament.prize_pool, ErrorCode::ExceedsPrizePool);
+
+        // Distribute prizes
+        for (winner, amount) in winners.iter().zip(prizes.iter()) {
+            if *amount > 0 {
+                token::transfer(
+                    CpiContext::new(
+                        ctx.accounts.token_program.to_account_info(),
+                        Transfer {
+                            from: ctx.accounts.tournament_token_account.to_account_info(),
+                            to: ctx.accounts.winner_token_account.to_account_info(),
+                            authority: ctx.accounts.tournament.to_account_info(),
+                        },
+                    ),
+                    *amount,
+                )?;
+            }
+        }
+
+        tournament.active = false;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct InitializeToken<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        init,
+        payer = authority,
+        mint::decimals = 9,
+        mint::authority = authority,
+    )]
+    pub mint: Account<'info, token::Mint>,
+    #[account(
+        init,
+        payer = authority,
+        token::mint = mint,
+        token::authority = authority,
+    )]
+    pub token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct CreateTournament<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = Tournament::LEN
+    )]
+    pub tournament: Account<'info, Tournament>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct RegisterTournament<'info> {
+    #[account(mut)]
+    pub player: Signer<'info>,
+    #[account(mut)]
+    pub tournament: Account<'info, Tournament>,
+    #[account(mut)]
+    pub player_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub tournament_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct DistributePrizes<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        constraint = tournament.authority == authority.key()
+    )]
+    pub tournament: Account<'info, Tournament>,
+    #[account(mut)]
+    pub tournament_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub winner_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[account]
+pub struct Tournament {
+    pub authority: Pubkey,
+    pub prize_pool: u64,
+    pub entry_fee: u64,
+    pub max_participants: u32,
+    pub current_participants: u32,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub active: bool,
+}
+
+impl Tournament {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // authority
+        8 + // prize_pool
+        8 + // entry_fee
+        4 + // max_participants
+        4 + // current_participants
+        8 + // start_time
+        8 + // end_time
+        1; // active
+}
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Tournament not active")]
+    TournamentNotActive,
+    #[msg("Tournament has not started")]
+    TournamentNotStarted,
+    #[msg("Tournament has ended")]
+    TournamentEnded,
+    #[msg("Tournament is full")]
+    TournamentFull,
+    #[msg("Invalid start time")]
+    InvalidStartTime,
+    #[msg("Invalid end time")]
+    InvalidEndTime,
+    #[msg("Arrays length mismatch")]
+    ArrayLengthMismatch,
+    #[msg("Total prizes exceed prize pool")]
+    ExceedsPrizePool,
+}
+
+// Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anchor_lang::solana_program::clock::Clock;
+    use anchor_lang::solana_program::system_program;
+
+    #[test]
+    fn test_initialize_token() {
+        let program_id = declare_id!("Dx1ne11111111111111111111111111111111111111");
+        let (mut banks_client, payer, recent_blockhash) = ProgramTest::new(
+            "dzine_program",
+            program_id,
+            processor!(process_instruction),
+        )
+        .start()
+        .unwrap();
+
+        // Create mint account
+        let mint = Keypair::new();
+        let token_account = Keypair::new();
+        
+        let rent = banks_client.get_rent().await.unwrap();
+        let mint_rent = rent.minimum_balance(token::Mint::LEN);
+        let token_rent = rent.minimum_balance(TokenAccount::LEN);
+
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                system_instruction::create_account(
+                    &payer.pubkey(),
+                    &mint.pubkey(),
+                    mint_rent,
+                    token::Mint::LEN as u64,
+                    &token::ID,
+                ),
+                system_instruction::create_account(
+                    &payer.pubkey(),
+                    &token_account.pubkey(),
+                    token_rent,
+                    TokenAccount::LEN as u64,
+                    &token::ID,
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+
+        transaction.sign(&[&payer, &mint, &token_account], recent_blockhash);
+        banks_client.process_transaction(transaction).await.unwrap();
+
+        // Initialize token
+        let accounts = InitializeToken {
+            authority: payer.pubkey(),
+            mint: mint.pubkey(),
+            token_account: token_account.pubkey(),
+            token_program: token::ID,
+            system_program: system_program::ID,
+            rent: sysvar::rent::ID,
+        };
+
+        let instruction = Instruction {
+            program_id,
+            accounts: accounts.to_account_metas(None),
+            data: instruction::initialize_token(1_000_000_000 * 10_u64.pow(9)).unwrap(),
+        };
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&payer.pubkey()),
+            &[&payer],
+            recent_blockhash,
+        );
+
+        banks_client.process_transaction(transaction).await.unwrap();
+
+        // Verify total supply
+        let token_account = banks_client
+            .get_account(token_account.pubkey())
+            .await
+            .unwrap()
+            .unwrap();
+        let token_account = TokenAccount::unpack(&token_account.data).unwrap();
+        assert_eq!(token_account.amount, 1_000_000_000 * 10_u64.pow(9));
+    }
+
+    #[test]
+    fn test_create_tournament() {
+        // Similar test setup as above
+        let program_id = declare_id!("Dx1ne11111111111111111111111111111111111111");
+        let (mut banks_client, payer, recent_blockhash) = ProgramTest::new(
+            "dzine_program",
+            program_id,
+            processor!(process_instruction),
+        )
+        .start()
+        .unwrap();
+
+        let tournament = Keypair::new();
+        let now = Clock::get().unwrap().unix_timestamp;
+        
+        let accounts = CreateTournament {
+            authority: payer.pubkey(),
+            tournament: tournament.pubkey(),
+            system_program: system_program::ID,
+            rent: sysvar::rent::ID,
+        };
+
+        let instruction = Instruction {
+            program_id,
+            accounts: accounts.to_account_metas(None),
+            data: instruction::create_tournament(
+                1000, // prize_pool
+                100,  // entry_fee
+                100,  // max_participants
+                now + 100, // start_time
+                now + 1000, // end_time
+            ).unwrap(),
+        };
+
+        let transaction = Transaction::new_signed_with_payer(
+            &[instruction],
+            Some(&payer.pubkey()),
+            &[&payer, &tournament],
+            recent_blockhash,
+        );
+
+        banks_client.process_transaction(transaction).await.unwrap();
+
+        // Verify tournament creation
+        let tournament_account = banks_client
+            .get_account(tournament.pubkey())
+            .await
+            .unwrap()
+            .unwrap();
+        let tournament_data = Tournament::try_deserialize(&mut &tournament_account.data[..]).unwrap();
+        
+        assert_eq!(tournament_data.prize_pool, 1000);
+        assert_eq!(tournament_data.entry_fee, 100);
+        assert_eq!(tournament_data.max_participants, 100);
+        assert_eq!(tournament_data.current_participants, 0);
+        assert!(tournament_data.active);
+    }
+}
