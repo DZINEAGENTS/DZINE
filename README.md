@@ -54,17 +54,4 @@ Battle mechanics engine
 Tournament management
 Real-time updates
 
-# Install dependencies
-cd DZINE
-npm install
 
-# Run development environment
-npm run dev
-Documentation
-
-Whitepaper
-Technical Specifications
-Tokenomics
-API Documentation
- Contributing
-We welcome contributions! Please read our Contributing Guidelines before submitting pull requests.
