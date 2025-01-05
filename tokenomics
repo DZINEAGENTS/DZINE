@@ -1,0 +1,136 @@
+# DZINE Tokenomics
+
+## Token Overview
+- Name: DZINE
+- Symbol: DZINE
+- Total Supply: 1,000,000,000 (1 billion) DZINE
+- Blockchain: Solana
+- Token Type: SPL Token
+
+## Token Distribution
+
+### Developer Allocation (15% of Total Supply)
+Total Developer Tokens: 150,000,000 DZINE
+
+Split into:
+1. Tournament Rewards Pool (10%)
+   - Amount: 100,000,000 DZINE
+   - Lock Period: 3 months
+   - Purpose: Exclusive for tournament prizes and player rewards
+   - Distribution: Released for tournaments after lock period
+
+2. Team Supply (5%)
+   - Amount: 50,000,000 DZINE
+   - Purpose: Team compensation and development funding
+   - Initial Team Distribution: 25%
+   - Remaining: 75% vested over 12 months
+
+### Public Distribution (85% of Total Supply)
+Total Public Tokens: 850,000,000 DZINE
+- Details to be determined for:
+  - Public Sale
+  - Liquidity Pool
+  - Community Rewards
+  - Marketing
+  - Ecosystem Development
+
+## Token Utility
+1. Tournament Entry
+   - Players stake DZINE to enter tournaments
+   - Higher stakes = higher potential rewards
+
+2. Platform Actions
+   - Agent creation fees
+   - Ability upgrades
+   - Special feature unlocks
+
+3. Governance
+   - Voting rights for platform decisions
+   - Tournament rule modifications
+   - Feature proposals
+
+## Vesting Schedules
+
+### Tournament Rewards Pool
+- Lock Period: 3 months
+- Unlock: 100% after lock period
+- Usage: Controlled release for tournament prizes
+
+### Team Supply
+Month 1-12:
+- Initial: 12,500,000 DZINE (25%)
+- Monthly Release: ~3,125,000 DZINE (6.25% per month)
+
+## Tournament Prize Structure
+
+### Prize Pool Allocation
+Example Distribution for 100,000 DZINE Tournament:
+- 1st Place: 50,000 DZINE (50%)
+- 2nd Place: 25,000 DZINE (25%)
+- 3rd Place: 15,000 DZINE (15%)
+- 4th-10th Place: 10,000 DZINE (10% total)
+
+### Monthly Tournament Schedule
+- Week 1: 25,000 DZINE Prize Pool
+- Week 2: 25,000 DZINE Prize Pool
+- Week 3: 25,000 DZINE Prize Pool
+- Week 4: 100,000 DZINE Championship
+
+## Token Economics
+
+### Deflationary Mechanisms
+1. Battle Fees
+   - 2% of DZINE used in battles burned
+   - Reduces supply over time
+
+2. Agent Creation
+   - 1% of agent creation fees burned
+   - Permanent supply reduction
+
+### Revenue Model
+Tournament Fees Distribution:
+- Prize Pool: 70%
+- Development: 20%
+- Token Burn: 10%
+
+## Security Measures
+
+### Smart Contract Security
+- Multi-signature wallet for team tokens
+- Time-locked contracts for tournament pool
+- Emergency pause functionality
+
+### Tournament Pool Protection
+- Smart contract-controlled distribution
+- Automated prize distribution
+- Transparent allocation system
+
+## Development Timeline
+
+### Phase 1: Token Launch
+- Initial team token distribution
+- Tournament pool locking
+- Smart contract deployment
+
+### Phase 2: Tournament Implementation
+- Tournament smart contract activation
+- Prize pool integration
+- Reward distribution system
+
+### Phase 3: Scaling
+- Additional tournament tiers
+- Enhanced reward mechanisms
+- Community governance implementation
+
+## Monitoring and Reporting
+
+### Regular Updates
+- Monthly token burn reports
+- Tournament distribution transparency
+- Team token vesting progress
+
+### Key Metrics Tracking
+- Token velocity
+- Tournament participation
+- Burn rate
+- Prize distribution efficiency
